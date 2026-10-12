@@ -1,0 +1,36 @@
+name: Collection watchdog
+
+# Fails (and GitHub emails the repository owner) when no new snapshot has
+# arrived for 36 hours. A green run means nothing needs attention.
+
+on:
+  schedule:
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the newest snapshot is recent
+        run: |
+          python - <<'EOF'
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          files = sorted(Path("data/raw").glob("flights_*Z.json.gz"))
+          if not files:
+              sys.exit("No snapshots found in data/raw")
+          newest = files[-1].name
+          stamp = datetime.strptime(newest, "flights_%Y-%m-%dT%H%MZ.json.gz").replace(tzinfo=timezone.utc)
+          hours = (datetime.now(timezone.utc) - stamp).total_seconds() / 3600
+          print(f"{len(files)} snapshots, newest {newest}, {hours:.1f} hours old")
+          if hours > 36:
+              sys.exit(f"No new snapshot for {hours:.0f} hours - collection has stopped")
+          EOF
